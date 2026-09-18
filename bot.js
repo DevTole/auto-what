@@ -74,7 +74,7 @@ app.get('/qr', async (req, res) => {
 <body><div class="box">
 <div class="ok">✅</div>
 <h1>WhatsApp is connected</h1>
-<p>No QR needed. The bot is ready to send OTPs.</p>
+<p>No QR needed. The bot is ready.</p>
 </div></body></html>`);
     }
 
@@ -171,6 +171,52 @@ app.post('/send', async (req, res) => {
     } catch (error) {
         console.error('Failed to send OTP:', error?.message ?? error);
         return res.status(502).json({ error: 'Unable to send the OTP' });
+    }
+});
+
+app.post('/send_message', async (req, res) => {
+    const { phone_number, message } = req.body || {};
+
+    const body = message === undefined || message === null
+        ? ''
+        : String(message);
+
+    if (!body.trim()) {
+        return res.status(400).json({ error: 'message is required' });
+    }
+
+    const recipient = normalizeKenyanNumber(phone_number);
+
+    if (!recipient) {
+        return res.status(400).json({
+            error: 'phone_number must be a valid Kenyan number (0…, 254…, or +254…)',
+        });
+    }
+
+    if (!isReady || !whatsAppSocket) {
+        return res.status(503).json({ error: 'WhatsApp is not connected' });
+    }
+
+    try {
+        const jid = `${recipient}@s.whatsapp.net`;
+
+        const [onWa] = await whatsAppSocket.onWhatsApp(jid);
+        if (!onWa?.exists) {
+            return res.status(400).json({ error: 'Number is not registered on WhatsApp' });
+        }
+
+        const targetJid = onWa.jid || jid;
+
+        const sent = await whatsAppSocket.sendMessage(targetJid, { text: body });
+
+        return res.json({
+            sent: true,
+            messageId: sent?.key?.id ?? null,
+            to: targetJid,
+        });
+    } catch (error) {
+        console.error('Failed to send message:', error?.message ?? error);
+        return res.status(502).json({ error: 'Unable to send the message' });
     }
 });
 
