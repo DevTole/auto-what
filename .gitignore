@@ -1,0 +1,5 @@
+node_modules/
+csk-bot-auth/
+*.log
+.env
+.DS_Store
