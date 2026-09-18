@@ -12,6 +12,7 @@ let whatsAppSocket = null;
 let isReady = false;
 let latestQR = null;
 let connectionState = 'starting';
+let lastConnectedAt = null;
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -54,7 +55,12 @@ function normalizeKenyanNumber(input) {
 }
 
 app.get('/test', (req, res) => {
-    res.json({ status: 'ok', whatsappReady: isReady, connectionState });
+    res.json({
+        status: 'ok',
+        whatsappReady: isReady,
+        connectionState,
+        lastConnectedAt,
+    });
 });
 
 app.get('/ping', (req, res) => {
@@ -66,29 +72,75 @@ app.get('/qr', async (req, res) => {
 
     if (isReady) {
         return res.send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>WhatsApp Bot</title>
-<meta http-equiv="refresh" content="5">
-<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0b141a;color:#e9edef}
-.box{text-align:center;padding:32px;border-radius:16px;background:#111b21;box-shadow:0 10px 30px rgba(0,0,0,.4)}
-.ok{font-size:48px}</style></head>
-<body><div class="box">
-<div class="ok">✅</div>
-<h1>WhatsApp is connected</h1>
-<p>No QR needed. The bot is ready.</p>
-</div></body></html>`);
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp Bot</title>
+<script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#0b141a; color:#e9edef; }
+  .box { text-align:center; padding:36px 32px; border-radius:18px; background:#111b21; box-shadow:0 10px 30px rgba(0,0,0,.4); max-width:420px; width:90%; }
+  .icon-wrap { display:inline-flex; align-items:center; justify-content:center; width:72px; height:72px; border-radius:50%; background:rgba(37,211,102,.12); margin-bottom:12px; }
+  ion-icon { font-size:44px; color:#25d366; }
+  h1 { margin:0 0 8px; font-size:22px; }
+  p { margin:8px 0; color:#8696a0; font-size:14px; line-height:1.5; }
+  .meta { margin-top:14px; font-size:12px; color:#5c6b73; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="icon-wrap"><ion-icon name="checkmark-circle-outline"></ion-icon></div>
+  <h1>WhatsApp is connected</h1>
+  <p>No QR needed. The bot is ready to send messages.</p>
+  <div class="meta">Connected at: ${lastConnectedAt ?? 'unknown'}</div>
+</div>
+<script>
+  if (Notification.permission === 'granted') {
+    new Notification('WhatsApp bot connected');
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then((p) => {
+      if (p === 'granted') new Notification('WhatsApp bot connected');
+    });
+  }
+</script>
+</body>
+</html>`);
     }
 
     if (!latestQR) {
         return res.send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>WhatsApp Bot</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="3">
-<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0b141a;color:#e9edef}
-.box{text-align:center;padding:32px;border-radius:16px;background:#111b21;box-shadow:0 10px 30px rgba(0,0,0,.4)}</style></head>
-<body><div class="box">
-<h1>Waiting for QR…</h1>
-<p>Connection state: <b>${connectionState}</b></p>
-<p>This page refreshes automatically.</p>
-</div></body></html>`);
+<title>WhatsApp Bot</title>
+<script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#0b141a; color:#e9edef; }
+  .box { text-align:center; padding:36px 32px; border-radius:18px; background:#111b21; box-shadow:0 10px 30px rgba(0,0,0,.4); max-width:420px; width:90%; }
+  .icon-wrap { display:inline-flex; align-items:center; justify-content:center; width:72px; height:72px; border-radius:50%; background:rgba(134,150,160,.12); margin-bottom:12px; }
+  ion-icon { font-size:44px; color:#8696a0; animation:spin 2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { margin:0 0 8px; font-size:22px; }
+  p { margin:8px 0; color:#8696a0; font-size:14px; }
+  .state { color:#e9edef; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="icon-wrap"><ion-icon name="sync-outline"></ion-icon></div>
+  <h1>Waiting for QR</h1>
+  <p>Connection state: <span class="state">${connectionState}</span></p>
+  <p>This page refreshes automatically.</p>
+</div>
+</body>
+</html>`);
     }
 
     try {
@@ -99,27 +151,42 @@ app.get('/qr', async (req, res) => {
         });
 
         return res.send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Scan WhatsApp QR</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="20">
+<title>Scan WhatsApp QR</title>
+<script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
 <style>
-body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0b141a;color:#e9edef}
-.box{text-align:center;padding:32px;border-radius:16px;background:#111b21;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:420px}
-img{width:100%;max-width:360px;border-radius:12px;background:#fff;padding:12px}
-h1{margin:0 0 8px;font-size:20px}
-p{margin:8px 0;color:#8696a0;font-size:14px}
-.steps{text-align:left;display:inline-block;margin-top:12px;color:#8696a0;font-size:13px;line-height:1.6}
-</style></head>
-<body><div class="box">
-<h1>Scan to connect WhatsApp</h1>
-<img src="${dataUrl}" alt="WhatsApp QR" />
-<p>This QR refreshes automatically every 20 seconds.</p>
-<div class="steps">
-1. Open WhatsApp on your phone<br>
-2. Tap <b>Settings → Linked Devices</b><br>
-3. Tap <b>Link a Device</b><br>
-4. Scan this QR
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#0b141a; color:#e9edef; padding:20px; box-sizing:border-box; }
+  .box { text-align:center; padding:36px 32px; border-radius:18px; background:#111b21; box-shadow:0 10px 30px rgba(0,0,0,.4); max-width:440px; width:100%; }
+  .icon-wrap { display:inline-flex; align-items:center; justify-content:center; width:72px; height:72px; border-radius:50%; background:rgba(37,211,102,.12); margin-bottom:12px; }
+  ion-icon { font-size:44px; color:#25d366; }
+  h1 { margin:0 0 8px; font-size:22px; }
+  p { margin:8px 0; color:#8696a0; font-size:14px; }
+  img { width:100%; max-width:340px; border-radius:12px; background:#fff; padding:12px; margin-top:12px; }
+  .steps { text-align:left; display:inline-block; margin-top:16px; color:#8696a0; font-size:13px; line-height:1.8; }
+  .steps ion-icon { font-size:16px; vertical-align:-3px; margin-right:6px; color:#25d366; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="icon-wrap"><ion-icon name="qr-code-outline"></ion-icon></div>
+  <h1>Scan to connect WhatsApp</h1>
+  <p>This QR refreshes automatically every 20 seconds.</p>
+  <img src="${dataUrl}" alt="WhatsApp QR" />
+  <div class="steps">
+    <div><ion-icon name="phone-portrait-outline"></ion-icon>Open WhatsApp on your phone</div>
+    <div><ion-icon name="settings-outline"></ion-icon>Tap Settings, then Linked Devices</div>
+    <div><ion-icon name="link-outline"></ion-icon>Tap Link a Device</div>
+    <div><ion-icon name="scan-outline"></ion-icon>Scan this QR</div>
+  </div>
 </div>
-</div></body></html>`);
+</body>
+</html>`);
     } catch (err) {
         console.error('Failed to render QR:', err);
         return res.status(500).send('Failed to render QR');
@@ -224,6 +291,38 @@ app.listen(port, '0.0.0.0', () => {
     console.log(`HTTP server listening on port ${port}`);
 });
 
+async function notifyConnect(socket) {
+    lastConnectedAt = new Date().toISOString();
+
+    try {
+        const selfJid = socket.user?.id;
+        if (selfJid) {
+            await socket.sendMessage(selfJid, {
+                text: `*Bot connected successfully*\n\nTime: ${lastConnectedAt}`,
+            });
+            console.log('Self-notification sent to', selfJid);
+        }
+    } catch (err) {
+        console.error('Self-notify failed:', err?.message ?? err);
+    }
+
+    const url = process.env.CONNECT_WEBHOOK_URL;
+    if (url) {
+        try {
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: `*WhatsApp bot connected*\n\nTime: ${lastConnectedAt}`,
+                }),
+            });
+            console.log('Webhook notification sent');
+        } catch (err) {
+            console.error('Webhook notify failed:', err?.message ?? err);
+        }
+    }
+}
+
 export async function loginBot() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState('csk-bot-auth');
@@ -242,7 +341,7 @@ export async function loginBot() {
             getMessage: async () => ({ conversation: 'retry' }),
         });
 
-        socket.ev.on('connection.update', (update) => {
+        socket.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
@@ -273,6 +372,7 @@ export async function loginBot() {
                 isReady = true;
                 latestQR = null;
                 connectionState = 'open';
+                await notifyConnect(socket);
             }
         });
 
